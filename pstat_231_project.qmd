@@ -1,0 +1,9 @@
+---
+title: "231 Project"
+author: "Lily Heidger"
+format: html
+---
+
+```{r}
+library(osmdata)
+```
