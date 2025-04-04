@@ -6,4 +6,18 @@ format: html
 
 ```{r}
 library(osmdata)
+library(here)
+library(dplyr)
+library(janitor)
+library(sf)
+library(mapview)
+library(terra)
+```
+
+```{r}
+sj_boundary <- st_read(here("San_Jose", "urbanboundary", "San_Jose.shp"))
+sf_boundary <- st_read(here("San_Francisco_and_Oakland", "urbanboundary", "San_Francisco_and_Oakland.shp"))
+
+sj_canopy <- rast(here("San_Jose", "urbancanopy2022", "San_Jose_canopy2022.tif"))
+colnames(sj_canopy)
 ```
