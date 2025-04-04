@@ -69,4 +69,29 @@ ggplot() +
        color = "Bike Infrastructure Type")
 ```
 
+```{r}
+# Get more comprehensive bike infrastructure information
+streets_detailed <- streets_sf %>%
+  select(osm_id, name, highway, 
+         cycleway, `cycleway:left`, `cycleway:right`, 
+         `cycleway:both`, bicycle, 
+         surface, maxspeed, geometry) %>%
+  # Create a detailed bike infrastructure column
+  mutate(
+    bike_infra_type = case_when(
+      !is.na(cycleway) & cycleway == "lane" ~ "bike lane",
+      !is.na(cycleway) & cycleway == "track" ~ "protected bike lane",
+      !is.na(cycleway) & cycleway == "shared_lane" ~ "sharrow",
+      !is.na(`cycleway:left`) ~ paste("left:", `cycleway:left`),
+      !is.na(`cycleway:right`) ~ paste("right:", `cycleway:right`),
+      !is.na(`cycleway:both`) ~ paste("both sides:", `cycleway:both`),
+      bicycle == "yes" ~ "bicycle allowed",
+      bicycle == "designated" ~ "designated route",
+      TRUE ~ "none"
+    )
+  )
+
+# Save to file if needed
+st_write(streets_detailed, "san_jose_streets_bike_infra.geojson")
+```
 
