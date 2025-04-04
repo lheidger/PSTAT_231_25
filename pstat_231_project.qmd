@@ -12,8 +12,11 @@ library(janitor)
 library(sf)
 library(mapview)
 library(terra)
+library(sf)
+library(ggplot2)
 ```
 
+# Tree Canopy 
 ```{r}
 sj_boundary <- st_read(here("San_Jose", "urbanboundary", "San_Jose.shp"))
 sf_boundary <- st_read(here("San_Francisco_and_Oakland", "urbanboundary", "San_Francisco_and_Oakland.shp"))
@@ -21,3 +24,49 @@ sf_boundary <- st_read(here("San_Francisco_and_Oakland", "urbanboundary", "San_F
 sj_canopy <- rast(here("San_Jose", "urbancanopy2022", "San_Jose_canopy2022.tif"))
 colnames(sj_canopy)
 ```
+
+# Osm Data
+```{r}
+# Define the area of interest (San Jose)
+san_jose <- getbb("San Jose, California")
+
+# Get all streets in San Jose
+all_streets <- san_jose %>%
+  opq() %>%
+  add_osm_feature(key = "highway", 
+                  value = c("motorway", "trunk", "primary", "secondary", 
+                            "tertiary", "residential", "unclassified", 
+                            "service", "living_street")) %>%
+  osmdata_sf()
+
+# Extract the lines (street segments)
+streets_sf <- all_streets$osm_lines
+```
+
+```{r}
+# Clean and prepare the data
+streets_clean <- streets_sf %>%
+  select(osm_id, name, highway, cycleway, cycleway:left, cycleway:right, 
+         bicycle, geometry) %>%
+  # Create a new column to categorize bike infrastructure
+  mutate(
+    bike_infra = case_when(
+      !is.na(cycleway) ~ as.character(cycleway),
+      !is.na(`cycleway:left`) ~ paste("left:", `cycleway:left`),
+      !is.na(`cycleway:right`) ~ paste("right:", `cycleway:right`),
+      bicycle == "yes" ~ "bicycle allowed",
+      bicycle == "designated" ~ "designated bike route",
+      TRUE ~ "none"
+    )
+  )
+
+# For visualization
+ggplot() +
+  geom_sf(data = streets_clean, aes(color = bike_infra), size = 0.8) +
+  scale_color_brewer(palette = "Set1") +
+  theme_minimal() +
+  labs(title = "San Jose Streets with Bike Infrastructure", 
+       color = "Bike Infrastructure Type")
+```
+
+
