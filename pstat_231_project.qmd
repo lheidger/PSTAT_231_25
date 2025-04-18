@@ -14,18 +14,23 @@ library(mapview)
 library(terra)
 library(sf)
 library(ggplot2)
+library(tidycensus)
+library(tidyverse)
+library(knitr)
+library(kableExtra)
 ```
 
 # Tree Canopy 
 ```{r}
-sj_boundary <- st_read(here("San_Jose", "urbanboundary", "San_Jose.shp"))
-sf_boundary <- st_read(here("San_Francisco_and_Oakland", "urbanboundary", "San_Francisco_and_Oakland.shp"))
+sj_boundary <- st_read(here("PSTAT_231_25", "data", "san_jose", "urbanboundary", "San_Jose.shp"))
+sf_boundary <- st_read(here("PSTAT_231_25", "data", "San_Francisco_and_Oakland", "urbanboundary", "San_Francisco_and_Oakland.shp"))
 
-sj_canopy <- rast(here("San_Jose", "urbancanopy2022", "San_Jose_canopy2022.tif"))
+sj_canopy <- rast(here("PSTAT_231_25", "data", "san_jose", "urbancanopy2022", "San_Jose_canopy2022.tif"))
 colnames(sj_canopy)
 ```
 
-# Osm Data
+# Osm Data 
+(ChatGPT used to learn how to use `osmdata`)
 ```{r}
 # Define the area of interest (San Jose)
 san_jose <- getbb("San Jose, California")
@@ -46,52 +51,162 @@ streets_sf <- all_streets$osm_lines
 ```{r}
 # Clean and prepare the data
 streets_clean <- streets_sf %>%
-  select(osm_id, name, highway, cycleway, cycleway:left, cycleway:right, 
-         bicycle, geometry) %>%
-  # Create a new column to categorize bike infrastructure
+  select(osm_id, name, highway, cycleway, `cycleway:left`, `cycleway:right`, 
+         bicycle, maxspeed, geometry) %>%
   mutate(
     bike_infra = case_when(
-      !is.na(cycleway) ~ as.character(cycleway),
-      !is.na(`cycleway:left`) ~ paste("left:", `cycleway:left`),
-      !is.na(`cycleway:right`) ~ paste("right:", `cycleway:right`),
-      bicycle == "yes" ~ "bicycle allowed",
-      bicycle == "designated" ~ "designated bike route",
+      # 🔵 Bike path
+      cycleway == "separate" ~ "bike path",
+      
+      # 🟢 Buffered lane
+      cycleway == "track" | `cycleway:left` == "track" ~ "buffered lane",
+      
+      # 🟡 Lane
+      cycleway == "lane" | 
+        `cycleway:left` == "lane" | 
+        `cycleway:right` == "lane" | 
+        `cycleway:right` == "lane" ~ "lane",
+      
+      # 🟠 Sharrow
+      cycleway == "shared_lane" |
+        `cycleway:left` == "shared_lane" |
+        `cycleway:right` == "shared_lane" ~ "sharrow",
+      
+      # ⚪ None
+      cycleway %in% c("no", "opposite_lane") |
+        `cycleway:left` == "no" |
+        `cycleway:right` == "no" ~ "none",
+      
+      # Default fallback
       TRUE ~ "none"
     )
   )
 
+
 # For visualization
-ggplot() +
-  geom_sf(data = streets_clean, aes(color = bike_infra), size = 0.8) +
-  scale_color_brewer(palette = "Set1") +
-  theme_minimal() +
-  labs(title = "San Jose Streets with Bike Infrastructure", 
-       color = "Bike Infrastructure Type")
+
+ggplot(streets_clean, aes(bike_infra))+
+  geom_bar()
+
+
+# ggplot() +
+#   geom_sf(data = streets_clean, aes(color = bike_infra), size = 0.8) +
+#   scale_color_brewer(palette = "Set1") +
+#   theme_minimal() +
+#   labs(title = "San Jose Streets with Bike Infrastructure", 
+#        color = "Bike Infrastructure Type")
+
+streets_clean %>%
+  count(bike_infra) %>%
+  arrange(desc(n))
+
+
+streets_clean <- streets_clean %>%
+  mutate(
+    maxspeed = as.numeric(gsub("[^0-9.]", "", maxspeed)) 
+  ) %>%
+  filter(maxspeed <= 60 | is.na(maxspeed)) %>% select(-`cycleway:left`, -`cycleway:right`)
+
+#st_write(streets_clean, "5san_jose_streets_clean.gpkg")
+
 ```
 
 ```{r}
-# Get more comprehensive bike infrastructure information
-streets_detailed <- streets_sf %>%
-  select(osm_id, name, highway, 
-         cycleway, `cycleway:left`, `cycleway:right`, 
-         `cycleway:both`, bicycle, 
-         surface, maxspeed, geometry) %>%
-  # Create a detailed bike infrastructure column
-  mutate(
-    bike_infra_type = case_when(
-      !is.na(cycleway) & cycleway == "lane" ~ "bike lane",
-      !is.na(cycleway) & cycleway == "track" ~ "protected bike lane",
-      !is.na(cycleway) & cycleway == "shared_lane" ~ "sharrow",
-      !is.na(`cycleway:left`) ~ paste("left:", `cycleway:left`),
-      !is.na(`cycleway:right`) ~ paste("right:", `cycleway:right`),
-      !is.na(`cycleway:both`) ~ paste("both sides:", `cycleway:both`),
-      bicycle == "yes" ~ "bicycle allowed",
-      bicycle == "designated" ~ "designated route",
-      TRUE ~ "none"
-    )
-  )
+# Don't think I need this anymore?? 
 
-# Save to file if needed
-st_write(streets_detailed, "san_jose_streets_bike_infra.geojson")
+# Get more comprehensive bike infrastructure information
+# streets_detailed <- streets_sf %>%
+#   select(osm_id, name, highway, 
+#          cycleway, `cycleway:left`, `cycleway:right`, 
+#          `cycleway:both`, bicycle, 
+#          surface, maxspeed, geometry) %>%
+#   # Create a detailed bike infrastructure column
+#   mutate(
+#     bike_infra_type = case_when(
+#       !is.na(cycleway) & cycleway == "lane" ~ "bike lane",
+#       !is.na(cycleway) & cycleway == "track" ~ "protected bike lane",
+#       !is.na(cycleway) & cycleway == "shared_lane" ~ "sharrow",
+#       !is.na(`cycleway:left`) ~ paste("left:", `cycleway:left`),
+#       !is.na(`cycleway:right`) ~ paste("right:", `cycleway:right`),
+#       !is.na(`cycleway:both`) ~ paste("both sides:", `cycleway:both`),
+#       bicycle == "yes" ~ "bicycle allowed",
+#       bicycle == "designated" ~ "designated route",
+#       TRUE ~ "none"
+#     )
+#   )
+# 
+# streets_detailed <- streets_detailed %>%
+#   rename(
+#     cycleway_left = `cycleway:left`,
+#     cycleway_right = `cycleway:right`,
+#     cycleway_both = `cycleway:both`
+#   ) %>% filter(maxspeed <= 60)
+# 
+# streets_detailed %>% ggplot(aes(bike_infra_type)) +
+#   geom_density() +
+#   guides(x =  guide_axis(angle = 90))
+# 
+# 
+# st_write(streets_detailed, "2san_jose_streets_bike_infra.gpkg")
+# 
+# st_write(streets_detailed, here("san_jose_streets_bike_infra.shp"))
+# # Save to file if needed
+# #st_write(streets_detailed, here("san_jose_streets_bike_infra.geojson"))
+```
+## Read in clean tree and bike data
+```{r}
+sj_buffer <- st_read(here("PSTAT_231_25","data", "main_Buffer4.shp"))
+
+# Map canopy density on each buffered street segment
+#mapview(sj_buffer["canopy_den"])
+```
+
+### More EDA
+Now let's do some basic box plots to look and see if there is any correlation between canopy density and bike infrastructure. First, we have to make bike infrastructure an ordinal, numeric field. 
+```{r}
+sj_buffer_clean <- sj_buffer %>% mutate(
+    comfort_level = case_when(
+      bike_infra == "bike path" ~ "5",
+
+      bike_infra == "buffered lane" ~ "4",
+      
+      bike_infra == "lane" ~ "3",
+      
+      bike_infra == "sharrow" ~ "2",
+      
+      bike_infra == "none" ~ "1"))
+
+as.numeric(sj_buffer_clean$comfort_level)
+
+
+ggplot(sj_buffer_clean, aes(x = factor(comfort_level), y = canopy_den)) +
+  geom_boxplot(fill = "lightblue") +
+  labs(
+    x = "Bike Infrastructure",
+    y = "Tree Canopy Density",
+    title = "Canopy Density by Bike Infrastructure Comfort Level"
+  ) +
+  theme_minimal()
+
+```
+
+
+
+## Census data
+```{r}
+options(tigris_use_cache = TRUE)
+
+sj_blocks <- get_decennial(
+  geography = "block",
+  variables = "P1_001N",  # Total population
+  state = "CA",
+  county = "Santa Clara",
+  year = 2020,
+  geometry = TRUE
+)
+
+
+
+
 ```
 
