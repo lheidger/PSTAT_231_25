@@ -5,24 +5,42 @@ format: html
 editor: visual
 ---
 
-**- An overview of your dataset\
-**What does it include?\
-Where and how will you be obtaining it? Include the link and source.\
-About how many observations? How many predictors?\
-What types of variables will you be working with?\
-Is there any missing data? About how much? Do you have an idea for how to handle it?\
+**-An overview of your dataset**\
+My project will utilize several datasets that I will clean and merge. The first is OpenStreetMap data, found [here](https://www.openstreetmap.org/#map=4/-39.27/-73.60), accessed using the `osmdata` package API. These data include urban features, of which I plan to use bike infrastructure data on the street segment level. In San Jose, CA, alone, there are over 97,000 observations, most of which are street segments classified as "none," meaning no infrastructure. I will likely not use all of these observations due to computational power limitations, so I will take a random representative sample of these observations.
+
+My second data source and primary predictor is US Forest Service Urban Canopy data, found [here](https://www.fs.usda.gov/detail/r5/communityforests/?cid=fseprd647385). These data are TIF files, which I plan to analyze using a raster density analysis, buffering each street segment by a chosen distance (likely 5m) and calculating the final urban canopy density to assign to each street segment. I do not yet know the number of street segments I will work with, but I have spatially continuous urban tree canopy data for the entirety of San Jose, as well as San Francisco and Oakland, if I have the time and computational power to expand my study area.
+
+My third data source is US Census data from the American Community Survey (ACS), found [here](https://www.census.gov/programs-surveys/acs/data.html), and accessed using the `tidycensus` package. I plan to test a variety of census variables in my model, including population density, education level, percent minorities, income level, and others yet to be identified. ACS data at the tract level will be assigned to individual street segments.
+
+None of my data sources have missing data that I cannot work around. I plan to only use street segments from OSM that have bike infrastructure data and remove any segments with missing data.
+
 \
 **- An overview of your research question(s)\
-**What variable(s) are you interested in predicting? What question(s) are you interested in answering?\
-Name your response/outcome variable(s) and briefly describe it/them.\
-Will these questions be best answered with a classification or regression approach?\
-Which predictors do you think will be especially useful?\
-Is the goal of your model descriptive, predictive, inferential, or a combination? Explain.\
+**With my model, I am interested in predicting segment-level bicycle infrastructure using urban tree canopy data and census variables. Previous literature looking at urban equity shows that areas with lower income individuals, lower education levels, and higher percentages of minority populations often have lower urban canopy rates. Many of these same populations also have higher percentages of households or individuals without cars, meaning people rely on biking, walking, and public transit. I am curious to investigate if these previous findings can be used to answer the following questions:
+
+-   Do areas with higher urban canopy percentages also have more bike infrastructure?
+
+-   Can urban canopy serve as a reliable predictor of bike infrastructure at the street-level?
+
+I plan to use a classification approach to feed the various predictors into my model and classify each street segment as a specific bike infrastructure category. Based on previous literature and knowledge, I expect census variables to be useful, and I am hopeful that urban canopy data will also be useful, especially in an area like the [Bay Area where the Green Gap is stark](https://canopy.org/blog/east-palo-alto-master-plan/). My goals are predictive, inferential, and descriptive. I want to first evaluate how useful urban canopy is to predict bike infrastructure, but I am also overall curious to see how my variables interact and how accurate the overall model is. I would also be curious to see whether a model built for San Jose was also directly applicable to San Francisco, time allowing.
+
 \
-**- Your proposed project timeline\
-**When do you plan on having your data set loaded, beginning your exploratory data analysis, etc?\
-Provide a general timeline for the rest of the quarter.\
+**- Your proposed project timeline**
+
+Week 2: Load data and begin EDA
+
+Weeks 3-4: Data cleaning, wrangling
+
+Week 5: Begin putting together initial model
+
+Week 6: Model tuning
+
+Week 7: Model error analysis
+
+Week 8: Model tuning/error analysis
+
+Week 9: Finalize model\
 \
-**- Any questions or concerns\
-**Are there any problems or difficult aspects of the project you anticipate?\
-Any specific questions you have for me/the instructional team?
+**- Any questions or concerns**
+
+This will be the first time I work with raster data in R, so I may default to data cleaning and raster analysis in ArcGIS Pro to ensure that I have enough time to work on my actual model.
