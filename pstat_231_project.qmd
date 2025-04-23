@@ -1,10 +1,21 @@
 ---
 title: "231 Project"
 author: "Lily Heidger"
-format: html
+format: 
+  html:
+    code-fold: show
+    toc: true
+    embed-resources: true
+editor: visual
+theme: lumen
+execute:
+  echo: true
+  message: false
+  warning: false
 ---
 
 ```{r}
+.libPaths("~/rlibs")
 library(osmdata)
 library(here)
 library(dplyr)
@@ -19,18 +30,36 @@ library(tidyverse)
 library(knitr)
 library(kableExtra)
 ```
+# Introduction
+Describes the data, the research questions, provides any background readers need to understand your project, etc.
+## Study Area
+San Jose, California 
+## Data
 
-# Tree Canopy 
+## Research Questions
+- Do areas with higher urban canopy percentages also have more bike infrastructure?
+
+- Can urban canopy serve as a reliable predictor of bike infrastructure at the street-level?
+
+## Tree Canopy Data
+
 ```{r}
 sj_boundary <- st_read(here("PSTAT_231_25", "data", "san_jose", "urbanboundary", "San_Jose.shp"))
-sf_boundary <- st_read(here("PSTAT_231_25", "data", "San_Francisco_and_Oakland", "urbanboundary", "San_Francisco_and_Oakland.shp"))
+sf_boundary <- st_read(here("PSTAT_231_25","data", "San_Francisco_and_Oakland", "urbanboundary", "San_Francisco_and_Oakland.shp"))
 
 sj_canopy <- rast(here("PSTAT_231_25", "data", "san_jose", "urbancanopy2022", "San_Jose_canopy2022.tif"))
 colnames(sj_canopy)
+
+saveRDS(sj_boundary, here("data", "sj_boundary.rds"))
+saveRDS(sf_boundary, here("data", "sf_boundary.rds"))
+
+
 ```
 
-# Osm Data 
+## Osm Data
+
 (ChatGPT used to learn how to use `osmdata`)
+
 ```{r}
 # Define the area of interest (San Jose)
 san_jose <- getbb("San Jose, California")
@@ -153,16 +182,27 @@ streets_clean <- streets_clean %>%
 # # Save to file if needed
 # #st_write(streets_detailed, here("san_jose_streets_bike_infra.geojson"))
 ```
-## Read in clean tree and bike data
-```{r}
-sj_buffer <- st_read(here("PSTAT_231_25","data", "main_Buffer4.shp"))
 
+## Read in clean tree and bike data
+
+```{r}
+sj_buffer <- st_read(here("PSTAT_231_25","data", "City_Limits", "main_Buffer4_Clip.shp"))
+
+sj_city_bound <- st_read(here("PSTAT_231_25","data", "City_Limits.shp"))
 # Map canopy density on each buffered street segment
 #mapview(sj_buffer["canopy_den"])
-```
 
-### More EDA
-Now let's do some basic box plots to look and see if there is any correlation between canopy density and bike infrastructure. First, we have to make bike infrastructure an ordinal, numeric field. 
+saveRDS(sj_buffer, here("PSTAT_231_25","data", "sj_buffer.rds"))
+sj_buffer <- readRDS(here("PSTAT_231_25","data", "sj_buffer.rds"))
+
+```
+San Jose City Limits accessed from https://gisdata-csj.opendata.arcgis.com/search?tags=boundaries
+
+### EDA
+This should contain at least 3 to 5 visualizations and/or tables and their interpretation/discussion. At minimum you should create a univariate visualization of the outcome(s), a bi-variate or multivariate visualization of the relationship(s) between the outcome and select predictors, etc. Part of an EDA involves asking questions about your data and exploring your data to find the answers.
+
+Now let's do some basic box plots to look and see if there is any correlation between canopy density and bike infrastructure. First, we have to make bike infrastructure an ordinal, numeric field.
+
 ```{r}
 sj_buffer_clean <- sj_buffer %>% mutate(
     comfort_level = case_when(
@@ -190,14 +230,13 @@ ggplot(sj_buffer_clean, aes(x = factor(comfort_level), y = canopy_den)) +
 
 ```
 
-
-
 ## Census data
+
 ```{r}
 options(tigris_use_cache = TRUE)
 
 sj_blocks <- get_decennial(
-  geography = "block",
+  geography = "block group",
   variables = "P1_001N",  # Total population
   state = "CA",
   county = "Santa Clara",
@@ -206,7 +245,127 @@ sj_blocks <- get_decennial(
 )
 
 
+#st_write(sj_blocks, "santa_clara_census_blocks.gpkg")
+
+sj_city_bound <- st_transform(sj_city_bound, 4326)
+sj_blocks <- st_transform(sj_blocks, 4326)
 
 
+sj_blocks_clip <- st_intersection(sj_blocks, sj_city_bound)
 ```
 
+```{r}
+set.seed(123)  # For reproducibility
+
+sj_sample <- sj_buffer_clean %>%
+  dplyr::slice_sample(n = 5000)
+
+sj_sample <- st_transform(sj_sample, 4326)
+
+
+# 1. Create buffers around your street segments
+buffer_distance <- 25  # meters or whatever distance you prefer
+streets_buffers <- st_buffer(sj_sample, buffer_distance) 
+streets_buffers <- st_transform(streets_buffers, 4326)
+
+# 2. Get census tract data with demographic variables
+# If using tidycensus, something like:
+ca_tracts <- get_acs(
+  geography = "block group",
+  variables = c(
+    "B19013_001", # Median household income
+    "B15003_017", # High school education
+    "B15003_022", # College education
+    "B08301_001", # Total commuters
+    "B08301_019"  # Bicycle commuters
+    # Add other variables as needed
+  ),
+  state = "CA",
+  county = "Santa Clara",
+  year = 2020,
+  geometry = TRUE
+)
+
+# 3. Calculate percentages and process your tract data
+tract_data <- ca_tracts %>%
+  # Process and calculate percentages
+  # This will depend on the specific variables you're using
+  mutate(
+   income_med = "B19013_001",
+    educ_high_school_perc = "B15003_022",
+    educ_college_perc = "B15003_017",
+    bicycle_perc = "B08301_001",
+    male_bicycle_perc = "B08301_019"
+  )
+
+tract_data <- st_transform(tract_data, st_crs(streets_buffers))
+
+# Convert the columns to numeric
+tract_data <- tract_data %>%
+  mutate(
+    income_med = as.numeric(income_med),
+    educ_high_school_perc = as.numeric(educ_high_school_perc),
+    educ_college_perc = as.numeric(educ_college_perc),
+    bicycle_perc = as.numeric(bicycle_perc),
+    male_bicycle_perc = as.numeric(male_bicycle_perc)
+  )
+
+# 4. Perform the interpolation
+streets_with_demographics <- cbind(
+  sj_sample %>% 
+    dplyr::select(osm_id, name),
+  st_interpolate_aw(
+    tract_data[c(
+      "income_med",
+      "educ_high_school_perc",
+      "educ_college_perc",
+      "bicycle_perc",
+      "male_bicycle_perc"    )],
+    streets_buffers,
+    extensive = FALSE,  # FALSE for percentages/rates, TRUE for counts
+    keep_NA = TRUE
+  ) %>% 
+    st_drop_geometry()
+)
+```
+[ChatGPT used to determine how to randomly sample my original sf object due to computational limitations.]
+
+## Merging Datasets
+
+```{r}
+sj_buffer_clean <- st_transform(sj_buffer_clean, 4326)
+
+
+
+
+streets_blocks_intersection <- st_intersection(sj_buffer, sj_blocks)
+
+# Calculate length of each street segment within each block
+streets_blocks_intersection$segment_length <- st_length(streets_blocks_intersection)
+
+# Group by street segment ID and calculate population density
+streets_population <- streets_blocks_intersection %>%
+  group_by(osm_id) %>%
+  summarize(
+    total_length = sum(segment_length),
+    weighted_population = sum(P1_001N * as.numeric(segment_length) / total_length),
+    population_density = weighted_population / total_length
+  )
+
+streets_with_population <- streets_clean %>%
+  left_join(streets_population, by = "osm_id")
+```
+
+\[[Claude LLM](https://claude.ai/) used to help build code for accurately assigning population weighting to street segments\]
+
+# Data Splitting and Cross-Validation 
+Describe your process of splitting data into training, test, and/or validation sets. Describe the process of cross-validation. Remember to write for a general audience. Act as if your project will be read by people new to machine learning.
+
+# Model Fitting 
+Describe the types of models you fit, their parameter values, and the results
+
+# Model Selection and Performance 
+A table and/or graph describing the performance of your best-fitting model on testing data. Describe your best-fitting model however you choose, and the quality of its predictions, etc
+
+# Conclusion
+Discusses the outcome(s) of models you fit. Which models performed well, which performed poorly? Were you surprised by model performance? Next steps? General conclusions?
