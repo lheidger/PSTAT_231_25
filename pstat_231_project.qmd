@@ -271,7 +271,7 @@ streets_buffers <- st_transform(streets_buffers, 4326)
 # 2. Get census tract data with demographic variables
 # If using tidycensus, something like:
 ca_tracts <- get_acs(
-  geography = "block group",
+  geography = "tract",
   variables = c(
     "B19013_001", # Median household income
     "B15003_017", # High school education
