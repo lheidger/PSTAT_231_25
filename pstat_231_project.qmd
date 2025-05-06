@@ -32,9 +32,10 @@ library(kableExtra)
 library(tidymodels)
 library(parsnip)
 library(yardstick)
+library(rsample)
 ```
 
-![\*Fig 1. A bike path lined with trees (Credit: <https://x.com/stewart/status/599780176667357184?lang=ar>)\*](tree2.jpeg){width="666"}
+![\*Fig 1. A bike lane and sidewalk lined with trees (Credit: <https://x.com/stewart/status/599780176667357184?lang=ar>)\*](tree2.jpeg){width="666"}
 
 # Introduction
 
@@ -170,7 +171,9 @@ streets_clean <- streets_sf %>%
 
 # For visualization
 ggplot(streets_clean, aes(bike_infra))+
-  geom_bar()
+  geom_bar() +
+  ggtitle("San Jose Bike Infrastructure by Category") +
+  theme_minimal()
 
 
 # ggplot() +
@@ -195,9 +198,11 @@ streets_clean <- streets_clean %>%
 
 ```
 
+This bar plot gives us a good sense of the overall frequency of each of the different types of bike infrastructure across San Jose. A majority of streets are marked as "none", meaning they have no bike infrastructure, with streets with painted bike lanes being second. "Sharrow" or shared roads are third most common, followed by bike paths, then buffered lanes. This means that our model should have a higher probability of predicting street segments with no bike infrastructure. We can also infer that we need to stratify our sampling techniques by bike infrastructure to make sure we have a similar distribution in each of our datasets.
+
 ### Read in clean tree and bike data
 
-After loading and cleaning the intial tree canopy data and OSM data, I saved both filed and uploaded them to ArcGIS Pro for further data wrangling. I first buffered each of the street segments by 25 meters to evaluate the street trees surrounding each street segment. Then, because the tree canopy data are raster data, I used the zonal statistics tool to analyze and assign the number of tree canopy pixels within each buffer and assign that value to the subsequent segment. I then calculated the area in m2 of each segment and divided the pixel value by the area to calculate percent canopy coverage for each segment. I then uploaded the dataset back into R. 
+After loading and cleaning the intial tree canopy data and OSM data, I saved both filed and uploaded them to ArcGIS Pro for further data wrangling. I first buffered each of the street segments by 25 meters to evaluate the street trees surrounding each street segment. Then, because the tree canopy data are raster data, I used the zonal statistics tool to analyze and assign the number of tree canopy pixels within each buffer and assign that value to the subsequent segment. I then calculated the area in m2 of each segment and divided the pixel value by the area to calculate percent canopy coverage for each segment. I then uploaded the dataset back into R.
 
 ```{r}
 sj_buffer <- st_read(here("PSTAT_231_25","data", "City_Limits", "main_Buffer4_Clip.shp"))
@@ -244,8 +249,7 @@ ggplot(sj_buffer_clean, aes(x = factor(comfort_level), y = canopy_den)) +
 
 ```
 
-ANALYZE BOXPLOTS
-
+This figure explores the basic relationship between tree canopy density and bike infrastructure, looking for any trends or differences among groups. Bike infrastructure level 3, segments with painted bike lanes, appears to have the lowest median tree canopy density of all of the groups. On the contrary, bike infrastructure level 5, segments with separated bike paths, has the highest median tree canopy density. These differences in tree canopy density among groups may indicate the potential for using tree canopy as a predictor for bike infrastructure.
 
 ## Census data
 
@@ -405,19 +409,27 @@ osm_census <- left_join(
   by = "osm_id"
 )
 
-saveRDS(osm_census, here("osm_census.rds"))
+osm_census_clean <- osm_census %>% select(-bicycle, -cycleway) %>% drop_na()
+
+saveRDS(osm_census_clean, here("osm_census_clean.rds"))
 
 ```
 
 \[[Claude LLM](https://claude.ai/) used to help build code for accurately assigning population weighting to street segments\]
+
+### More Boxplots- Census Data
+
+```{r}
+ggplot()
+```
 
 # Data Splitting and Cross-Validation
 
 Describe your process of splitting data into training, test, and/or validation sets. Describe the process of cross-validation. Remember to write for a general audience. Act as if your project will be read by people new to machine learning.
 
 ```{r}
-osm_census <- readRDS(here("osm_census.rds"))
-osm_census_split <- initial_split(osm_census, prop = 0.80, strata = comfort_level)
+osm_census_clean <- readRDS(here("osm_census_clean.rds"))
+osm_census_split <- initial_split(osm_census_clean, prop = 0.80, strata = comfort_level)
 
 osm_census_train <- training(osm_census_split)
 osm_census_test <- testing(osm_census_split)
