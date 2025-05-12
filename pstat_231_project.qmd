@@ -33,6 +33,8 @@ library(tidymodels)
 library(parsnip)
 library(yardstick)
 library(rsample)
+library(nnet)
+library(kknn)
 ```
 
 ![\*Fig 1. A bike lane and sidewalk lined with trees (Credit: <https://x.com/stewart/status/599780176667357184?lang=ar>)\*](tree2.jpeg){width="666"}
@@ -53,7 +55,9 @@ San Jose is a city located south of the San Francisco Bay in Northern California
 
 ### Tree Canopy data
 
-![\*Fig 3. US Forest Service Tree Canopy Data.(Credit: https://climatecheck.com/california/san-jose)\*](tree_data_pic.png) The primary predictor and focus of this research question involves tree canopy cover data from the US Forest service, found [here](https://usfs.hub.arcgis.com/maps/dc0b6780a9ea4b8ea88057a3b26f7025/explore?location=34.419949%2C-119.277200%2C5.66). These data are pre-processed remote sensing TIF files indicating where tree canopy cover is found. The data were most recently updated in 2021.
+![\*Fig 3. US Forest Service Tree Canopy Data. (Credit: https://climatecheck.com/california/san-jose)\*](tree_data_pic.png)
+
+The primary predictor and focus of this research question involves tree canopy cover data from the US Forest service, found [here](https://usfs.hub.arcgis.com/maps/dc0b6780a9ea4b8ea88057a3b26f7025/explore?location=34.419949%2C-119.277200%2C5.66). These data are pre-processed remote sensing TIF files indicating where tree canopy cover is found. The data were most recently updated in 2021.
 
 ### Census variable data
 
@@ -95,7 +99,7 @@ With these data in mind, our research questions are as follows:
 
 -   Can urban canopy serve as a reliable predictor of bike infrastructure at the street-level?
 
-### EDA
+## EDA
 
 This should contain at least 3 to 5 visualizations and/or tables and their interpretation/discussion. At minimum you should create a univariate visualization of the outcome(s), a bi-variate or multivariate visualization of the relationship(s) between the outcome and select predictors, etc. Part of an EDA involves asking questions about your data and exploring your data to find the answers.
 
@@ -142,24 +146,24 @@ streets_clean <- streets_sf %>%
          bicycle, maxspeed, geometry) %>%
   mutate(
     bike_infra = case_when(
-      # 🔵 Bike path
+      # Bike path
       cycleway == "separate" ~ "bike path",
       
-      # 🟢 Buffered lane
+      # Buffered lane
       cycleway == "track" | `cycleway:left` == "track" ~ "buffered lane",
       
-      # 🟡 Lane
+      # Lane
       cycleway == "lane" | 
         `cycleway:left` == "lane" | 
         `cycleway:right` == "lane" | 
         `cycleway:right` == "lane" ~ "lane",
       
-      # 🟠 Sharrow
+      # Sharrow
       cycleway == "shared_lane" |
         `cycleway:left` == "shared_lane" |
         `cycleway:right` == "shared_lane" ~ "sharrow",
       
-      # ⚪ None
+      # None
       cycleway %in% c("no", "opposite_lane") |
         `cycleway:left` == "no" |
         `cycleway:right` == "no" ~ "none",
@@ -169,7 +173,7 @@ streets_clean <- streets_sf %>%
     )
   )
 
-# For visualization
+
 ggplot(streets_clean, aes(bike_infra))+
   geom_bar() +
   ggtitle("San Jose Bike Infrastructure by Category") +
@@ -409,7 +413,7 @@ osm_census <- left_join(
   by = "osm_id"
 )
 
-osm_census_clean <- osm_census %>% select(-bicycle, -cycleway) %>% drop_na()
+osm_census_clean <- osm_census %>% select(-bicycle, -cycleway, -bike_infra, -BUFF_DIST, -ORIG_FID, -ZONE_CODE, -COUNT, -AREA, -SUM, -area_m2, -geom_Lengt, -geom_Area, -name.y, -geometry, -osm_id, -name.x, -maxspeed, -highway) %>% drop_na() %>% st_drop_geometry() %>%  filter(comfort_level != 4)
 
 saveRDS(osm_census_clean, here("osm_census_clean.rds"))
 
@@ -423,25 +427,147 @@ saveRDS(osm_census_clean, here("osm_census_clean.rds"))
 ggplot()
 ```
 
+### Multicollinearity
+
+```{r}
+library(ggcorrplot)
+library(lares)
+numeric_cols <- osm_census_clean %>% select(-comfort_level)
+
+corr <- round(cor(na.omit(numeric_cols)), 1)
+corr[is.na(corr) | is.nan(corr) | is.infinite(corr)] <- 0
+
+ggcorrplot(corr, 
+            hc.order = TRUE, 
+            type = "lower", 
+            lab = TRUE, 
+            outline.color = "white")
+
+correlations <- corr_cross(df = numeric_cols %>%
+             data.frame(), # name of dataset
+             top = 13)#,
+             #top = 20)
+
+correlations
+```
+
+Decided to remove `pct_hispanic` and `educ_college_perc` since they have correlation coefficients above 0.7.
+
+```{r}
+data_clean <- numeric_cols %>% select(-pct_hispanic, -educ_college_perc)
+correlations2 <- corr_cross(df = data_clean %>%
+             data.frame(), 
+             top = 13)
+
+correlations2
+```
+
+Removing those two predictors eliminated the main correlation issues.
+
 # Data Splitting and Cross-Validation
 
 Describe your process of splitting data into training, test, and/or validation sets. Describe the process of cross-validation. Remember to write for a general audience. Act as if your project will be read by people new to machine learning.
 
 ```{r}
-osm_census_clean <- readRDS(here("osm_census_clean.rds"))
-osm_census_split <- initial_split(osm_census_clean, prop = 0.80, strata = comfort_level)
+
+data_clean2 <- readRDS(here("osm_census_clean.rds")) %>% select(-pct_hispanic, -educ_college_perc) 
+osm_census_split <- initial_split(data_clean2, prop = 0.75, strata = comfort_level)
 
 osm_census_train <- training(osm_census_split)
 osm_census_test <- testing(osm_census_split)
+
+osm_census_train$comfort_level <- as.factor(osm_census_train$comfort_level)
+
+folds <- vfold_cv(train_data, v = 5, strata = comfort_level)
 ```
 
 # Model Fitting
 
 Describe the types of models you fit, their parameter values, and the results
 
+## Multinomial Regression Model
+
+```{r}
+library(themis)
+
+recipe <- recipe(comfort_level ~ ., data = osm_census_train) %>%
+  step_dummy(all_nominal_predictors()) %>%
+  step_normalize(all_numeric_predictors()) %>%
+  step_upsample(comfort_level)
+
+
+mn_m1 <- multinom_reg(penalty = 0) %>%
+  set_engine("glmnet") %>%
+  set_mode("classification")
+
+
+mn_wflow <- workflow() %>% 
+  add_model(mn_m1) %>% 
+  add_recipe(recipe)
+
+mn_fit <- mn_wflow %>% 
+  fit(data = osm_census_train)
+
+mn_fit %>%
+  extract_fit_parsnip() %>%
+  tidy(exponentiate = FALSE)
+
+# Prediction
+pred_mn <- predict(mn_fit, osm_census_train, type = "prob") %>% bind_cols(osm_census_train)
+
+pred_mn <- pred_mn %>%
+  mutate(predicted_class = colnames(select(., starts_with(".pred_")))[
+    max.col(select(., starts_with(".pred_")), ties.method = "first")
+  ]) %>%
+  mutate(predicted_class = as.integer(gsub(".pred_", "", predicted_class)))
+
+pred_mn <- pred_mn %>%
+  mutate(
+    predicted_class = factor(predicted_class, levels = levels(comfort_level))
+  )
+
+```
+
+[*Tidymodels website*](https://www.tidymodels.org/start/resampling/) *used to understand resampling for validation. ChatGPT used to troubleshoot.*
+
+## KNN Model
+
+```{r}
+knn_m1 <- nearest_neighbor(neighbors = 5) %>%
+  set_engine("kknn") %>%
+  set_mode("classification")
+
+
+knn_wflow <- workflow() %>% 
+  add_model(knn_m1) %>% 
+  add_recipe(recipe)
+
+knn_fit <- knn_wflow %>% 
+  fit(data = osm_census_train)
+
+pred_knn <- knn_fit %>% 
+  predict(new_data = osm_census_train) %>%
+  bind_cols(osm_census_train %>% select(comfort_level))
+
+# Calculate metrics
+metrics(pred_knn, 
+        truth = comfort_level, 
+        estimate = .pred_class)
+
+conf_mat(data = pred_knn, 
+         truth = comfort_level, 
+         estimate = .pred_class)
+```
+
 # Model Selection and Performance
 
 A table and/or graph describing the performance of your best-fitting model on testing data. Describe your best-fitting model however you choose, and the quality of its predictions, etc
+
+```{r}
+
+
+accuracy(pred_mn, truth = comfort_level, estimate = predicted_class)
+```
 
 # Conclusion
 
