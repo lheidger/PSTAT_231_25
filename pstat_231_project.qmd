@@ -59,6 +59,8 @@ San Jose is a city located south of the San Francisco Bay in Northern California
 
 The primary predictor and focus of this research question involves tree canopy cover data from the US Forest service, found [here](https://usfs.hub.arcgis.com/maps/dc0b6780a9ea4b8ea88057a3b26f7025/explore?location=34.419949%2C-119.277200%2C5.66). These data are pre-processed remote sensing TIF files indicating where tree canopy cover is found. The data were most recently updated in 2021.
 
+**Citation:** US Forest Service. “Urban Tree Canopy in California.” Accessed April 12, 2025. <https://usfs.hub.arcgis.com/maps/dc0b6780a9ea4b8ea88057a3b26f7025/explore?location=34.419949,-119.277200,5.66>.
+
 ### Census variable data
 
 The remaining predictors in this project are sourced from the 2020 Census, found [here](https://www.census.gov/programs-surveys/decennial-census/decade/2020/2020-census-results.html). These Census data are block group scale, with the selected variables as follows:
@@ -73,7 +75,15 @@ The remaining predictors in this project are sourced from the 2020 Census, found
 
 -   \% who commute via bicycle who are male
 
--   
+-   \% who identify as Black
+
+-   \% who identify as Hispanic
+
+-   \% below the poverty level
+
+-   \% who are veterans
+
+**Citation:** U.S. Census Bureau. "2020 American Community Survey 5-Year Estimates," 2020, \<http://api.census.gov/data/2022/acs/acs5\>, accessed on April 12, 2025.
 
 ### OpenStreetMap data
 
@@ -90,6 +100,8 @@ OSM data are open-source urban infrastructure and point-of-interest (POI) data, 
 -   “Shared_lane” (AKA “sharrow” or shared roadway) = 2
 
 -   “None” (AKA no bike infrastructure) = 1
+
+**Citation:** OpenStreetMap contributors (2024). OpenStreetMap \[CycleOSM\]. OpenStreetMap Foundation. Availabl as open data under the Open Data Commons Open Database License (ODbl) at openstreetmap.org. Accessed April 12, 2025.
 
 ## Research Questions
 
@@ -206,7 +218,7 @@ This bar plot gives us a good sense of the overall frequency of each of the diff
 
 ### Read in clean tree and bike data
 
-After loading and cleaning the intial tree canopy data and OSM data, I saved both filed and uploaded them to ArcGIS Pro for further data wrangling. I first buffered each of the street segments by 25 meters to evaluate the street trees surrounding each street segment. Then, because the tree canopy data are raster data, I used the zonal statistics tool to analyze and assign the number of tree canopy pixels within each buffer and assign that value to the subsequent segment. I then calculated the area in m2 of each segment and divided the pixel value by the area to calculate percent canopy coverage for each segment. I then uploaded the dataset back into R.
+After loading and cleaning the initial tree canopy data and OSM data, I saved both and uploaded them to ArcGIS Pro for further data wrangling. I first buffered each of the street segments by 25 meters to evaluate the street trees surrounding each street segment. Then, because the tree canopy data are raster data, I used the zonal statistics tool to analyze and assign the number of tree canopy pixels within each buffer and assign that value to the subsequent segment. I then calculated the area in m2 of each segment and divided the pixel value by the area to calculate percent canopy coverage for each segment. I then uploaded the dataset back into R.
 
 ```{r}
 sj_buffer <- st_read(here("PSTAT_231_25","data", "City_Limits", "main_Buffer4_Clip.shp"))
@@ -373,9 +385,12 @@ streets_with_demographics <- cbind(
     st_drop_geometry()
 )
 
+mapview(tract_data["income_med"])
 ```
 
-\[ChatGPT used to determine how to randomly sample my original sf object due to computational limitations.\]
+This map provides a good exploration of the spatial distribution of median household income at the tract level in San Jose. Lower income residents appear to be clustered in the downtown core of the city, with median income increasing as one moves away from the downtown area. These interesting patterns may be useful in our model.
+
+*ChatGPT used to determine how to randomly sample my original sf object due to computational limitations.*
 
 ## Merging Datasets
 
@@ -421,12 +436,6 @@ saveRDS(osm_census_clean, here("osm_census_clean.rds"))
 
 \[[Claude LLM](https://claude.ai/) used to help build code for accurately assigning population weighting to street segments\]
 
-### More Boxplots- Census Data
-
-```{r}
-ggplot()
-```
-
 ### Multicollinearity
 
 ```{r}
@@ -451,7 +460,7 @@ correlations <- corr_cross(df = numeric_cols %>%
 correlations
 ```
 
-Decided to remove `pct_hispanic` and `educ_college_perc` since they have correlation coefficients above 0.7.
+The top few bars in this plot indicate that several predictors have a correlation coefficient above 0.7. In order to most efficiently avoid correlation, we remove `pct_hispanic` and `educ_college_perc`.
 
 ```{r}
 data_clean <- numeric_cols %>% select(-pct_hispanic, -educ_college_perc)
@@ -462,7 +471,7 @@ correlations2 <- corr_cross(df = data_clean %>%
 correlations2
 ```
 
-Removing those two predictors eliminated the main correlation issues.
+Removing these two predictors eliminated the main correlation issues.
 
 # Data Splitting and Cross-Validation
 
@@ -554,9 +563,8 @@ metrics(pred_knn,
         truth = comfort_level, 
         estimate = .pred_class)
 
-conf_mat(data = pred_knn, 
-         truth = comfort_level, 
-         estimate = .pred_class)
+yardstick::conf_mat(data = pred_knn, truth = comfort_level, estimate = .pred_class)
+
 ```
 
 # Model Selection and Performance
