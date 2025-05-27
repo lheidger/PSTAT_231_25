@@ -35,19 +35,24 @@ library(yardstick)
 library(rsample)
 library(nnet)
 library(kknn)
+
 ```
+
+# Can Urban Tree Canopy Predict Bike Infrastructure?
 
 ![\*Fig 1. A bike lane and sidewalk lined with trees (Credit: <https://x.com/stewart/status/599780176667357184?lang=ar>)\*](tree2.jpeg){width="666"}
 
 # Introduction
 
-Previous literature in urban studies and environmental justice has identified a correlation between areas with lower income individuals, lower education levels, or higher percentages of minority populations and overall lower urban tree canopy rates (SOURCE). Additionally, many of these same populations also have higher percentages of households or individuals without cars, meaning residents rely on biking, walking, and public transit (SOURCE). However, many lower-income neighborhoods lack the bike infrastructure to support the population that relies on biking. This project investigates the relationship between tree canopy and various socioeconomic variables, exploring whether a model of these variables can accurately predict the bike infrastructure on individual street segments.
+Previous literature in urban studies and environmental justice has identified a correlation between areas with lower income individuals, lower education levels, or higher percentages of minority populations and overall lower urban tree canopy rates ([American Forests](https://www.americanforests.org/article/the-need-for-tree-equity-is-heating-up/)). Additionally, many of these same populations also have higher percentages of households or individuals without cars, meaning residents rely on biking, walking, and public transit ([Klein & Smart, 2019](https://www.jstor.org/stable/26911275?seq=1)). However, many lower-income neighborhoods lack the bike infrastructure to support the population that relies on biking. This project investigates the relationship between tree canopy and various socioeconomic variables, exploring whether a model of these variables can accurately predict the bike infrastructure on individual street segments.
 
-Describes the data, the research questions, provides any background readers need to understand your project, etc.
+For the purposes of this project, bike infrastructure is ranked in the following manner: no bike infrastructure (1), lane shared with cars AKA "sharrow" (2), painted bike lane (3), buffered or protected bike lane (4), and separated bike path (5). These rankings are originally based on the Canadian Bikeway Comfort and Safety (Can-BICS) classification system, shown in **Figure 2** ([Winters et al., 2020](https://www.canada.ca/en/public-health/services/reports-publications/health-promotion-chronic-disease-prevention-canada-research-policy-practice/vol-40-no-9-2020/canbics-classification-system-naming-convention-cycling-infrastructure.html)).
 
-## Study Area: San Jose , California
+![\*Fig 2. Can-BICS classification system. (Credit: https://chatrlab.ca/projects/can-bics-english/)\*](canbics.png)
 
-![\*Fig 2. San Jose, California.(Credit: https://climatecheck.com/california/san-jose)\*](sanjose.png)
+## Study Area: San Jose, California, USA
+
+![\*Fig 3. San Jose, California.(Credit: https://climatecheck.com/california/san-jose)\*](sanjose.png)
 
 San Jose is a city located south of the San Francisco Bay in Northern California. It spans 178 square miles and hosts about 970,000 residents. Over 38% of residents identify as Asian, 31% Hispanic or Latino, 29% White, and 3% Black. Nearly 8% of residents fall below the poverty level (US Census, 2023).
 
@@ -55,7 +60,7 @@ San Jose is a city located south of the San Francisco Bay in Northern California
 
 ### Tree Canopy data
 
-![\*Fig 3. US Forest Service Tree Canopy Data. (Credit: https://climatecheck.com/california/san-jose)\*](tree_data_pic.png)
+![\*Fig 4. US Forest Service Tree Canopy Data. (Credit: https://climatecheck.com/california/san-jose)\*](tree_data_pic.png)
 
 The primary predictor and focus of this research question involves tree canopy cover data from the US Forest service, found [here](https://usfs.hub.arcgis.com/maps/dc0b6780a9ea4b8ea88057a3b26f7025/explore?location=34.419949%2C-119.277200%2C5.66). These data are pre-processed remote sensing TIF files indicating where tree canopy cover is found. The data were most recently updated in 2021.
 
@@ -87,7 +92,7 @@ The remaining predictors in this project are sourced from the 2020 Census, found
 
 ### OpenStreetMap data
 
-![\*Fig 4. OpenStreetMap data interface. (Credit: https://wiki.openstreetmap.org/wiki/Map_Data_layer)\*](osm_pic.png){width="711"}
+![\*Fig 5. OpenStreetMap data interface. (Credit: https://wiki.openstreetmap.org/wiki/Map_Data_layer)\*](osm_pic.png){width="711"}
 
 OSM data are open-source urban infrastructure and point-of-interest (POI) data, publicly available [here](https://www.openstreetmap.org/#map=4/-39.27/-73.60) and accessed in this project with the `osmdata` API. For this project, bike infrastructure data are accessed and cleaned, ranking the categorical infrastructure types in an ordinal and numerical column called comfort_level:
 
@@ -113,7 +118,7 @@ With these data in mind, our research questions are as follows:
 
 ## EDA
 
-This should contain at least 3 to 5 visualizations and/or tables and their interpretation/discussion. At minimum you should create a univariate visualization of the outcome(s), a bi-variate or multivariate visualization of the relationship(s) between the outcome and select predictors, etc. Part of an EDA involves asking questions about your data and exploring your data to find the answers.
+My methods first involved exploring the data and the relationship of several variables. First, I read in the tree canopy data and OSM data, exploring the distribution of observations in the various bike infrastructure categories. Missing data was not an issue with this dataset, so no action was taken to handle missingness.
 
 ### Tree Canopy Data
 
@@ -135,10 +140,8 @@ saveRDS(sf_boundary, here("data", "sf_boundary.rds"))
 (ChatGPT used to learn how to use `osmdata`)
 
 ```{r}
-# Define the area of interest (San Jose)
 san_jose <- getbb("San Jose, California")
 
-# Get all streets in San Jose
 all_streets <- san_jose %>%
   opq() %>%
   add_osm_feature(key = "highway", 
@@ -147,12 +150,10 @@ all_streets <- san_jose %>%
                             "service", "living_street")) %>%
   osmdata_sf()
 
-# Extract the lines (street segments)
 streets_sf <- all_streets$osm_lines
 ```
 
 ```{r}
-# Clean and prepare the data
 streets_clean <- streets_sf %>%
   select(osm_id, name, highway, cycleway, `cycleway:left`, `cycleway:right`, 
          bicycle, maxspeed, geometry) %>%
@@ -214,11 +215,13 @@ streets_clean <- streets_clean %>%
 
 ```
 
-This bar plot gives us a good sense of the overall frequency of each of the different types of bike infrastructure across San Jose. A majority of streets are marked as "none", meaning they have no bike infrastructure, with streets with painted bike lanes being second. "Sharrow" or shared roads are third most common, followed by bike paths, then buffered lanes. This means that our model should have a higher probability of predicting street segments with no bike infrastructure. We can also infer that we need to stratify our sampling techniques by bike infrastructure to make sure we have a similar distribution in each of our datasets.
+Figure 5. Number of different segments of each bike infrastructure category in San Jose.
+
+This bar plot gives us a good sense of the overall frequency of each of the different types of bike infrastructure across San Jose. A majority of streets are marked as "none", meaning they have no bike infrastructure, with streets with painted bike lanes being second. "Sharrow" or shared roads are third most common, followed by bike paths, then buffered lanes. This means that our model should have a higher probability of predicting street segments with no bike infrastructure. I can also infer that I need to stratify our sampling techniques by bike infrastructure to make sure I have a similar distribution in each of our datasets and consider upsampling or downsampling to even out the differences.
 
 ### Read in clean tree and bike data
 
-After loading and cleaning the initial tree canopy data and OSM data, I saved both and uploaded them to ArcGIS Pro for further data wrangling. I first buffered each of the street segments by 25 meters to evaluate the street trees surrounding each street segment. Then, because the tree canopy data are raster data, I used the zonal statistics tool to analyze and assign the number of tree canopy pixels within each buffer and assign that value to the subsequent segment. I then calculated the area in m2 of each segment and divided the pixel value by the area to calculate percent canopy coverage for each segment. I then uploaded the dataset back into R.
+After loading and cleaning the initial tree canopy data and OSM data, I saved both and uploaded them to ArcGIS Pro for further data wrangling. I first buffered each of the street segments by 25 meters to evaluate the street trees surrounding each street segment. Then, because the tree canopy data are raster data, I used the zonal statistics tool to analyze and assign the number of tree canopy pixels within each buffer and assign that value to the subsequent segment. I then calculated the area in $m^2$ of each segment and divided the pixel value by the area to calculate percent canopy coverage for each segment. I then uploaded the dataset back into R.
 
 ```{r}
 sj_buffer <- st_read(here("PSTAT_231_25","data", "City_Limits", "main_Buffer4_Clip.shp"))
@@ -236,7 +239,7 @@ San Jose City Limits accessed from https://gisdata-csj.opendata.arcgis.com/searc
 
 ### Box plots
 
-Now we'll explore some basic box plots to look and see if there is any correlation between canopy density and bike infrastructure. First, we have to make bike infrastructure an ordinal, numeric field.
+Now we'll explore some basic box plots to identify any correlation between canopy density and bike infrastructure. First, I have to make bike infrastructure an ordinal, numeric field.
 
 ```{r}
 sj_buffer_clean <- sj_buffer %>% mutate(
@@ -265,9 +268,13 @@ ggplot(sj_buffer_clean, aes(x = factor(comfort_level), y = canopy_den)) +
 
 ```
 
+Figure 6. Box plots of canopy density distribution for each comfort level.
+
 This figure explores the basic relationship between tree canopy density and bike infrastructure, looking for any trends or differences among groups. Bike infrastructure level 3, segments with painted bike lanes, appears to have the lowest median tree canopy density of all of the groups. On the contrary, bike infrastructure level 5, segments with separated bike paths, has the highest median tree canopy density. These differences in tree canopy density among groups may indicate the potential for using tree canopy as a predictor for bike infrastructure.
 
 ## Census data
+
+I then access US Census data using the `get_acs` API. This API pulls American Community Survey data straight from the Census website. I then clean the data and calculate percentages for each of the variables.
 
 ```{r}
 options(tigris_use_cache = TRUE)
@@ -281,7 +288,6 @@ sj_blocks <- get_decennial(
   geometry = TRUE
 )
 
-
 #st_write(sj_blocks, "santa_clara_census_blocks.gpkg")
 
 sj_city_bound <- st_transform(sj_city_bound, 4326)
@@ -292,7 +298,7 @@ sj_blocks_clip <- st_intersection(sj_blocks, sj_city_bound)
 ```
 
 ```{r}
-set.seed(123)  # For reproducibility
+set.seed(123)
 
 sj_sample <- sj_buffer_clean %>%
   dplyr::slice_sample(n = 10000)
@@ -300,7 +306,7 @@ sj_sample <- sj_buffer_clean %>%
 sj_sample <- st_transform(sj_sample, 4326)
 
 
-# 1. Get ACS data
+#ACS data
 ca_tracts <- get_acs(
   geography = "tract",
   variables = c(
@@ -321,7 +327,7 @@ ca_tracts <- get_acs(
   geometry = TRUE
 )
 
-# 2. Pivot wider once
+#pivot wider
 ca_tracts <- ca_tracts %>%
   select(GEOID, NAME, variable, estimate, geometry) %>%
   pivot_wider(
@@ -329,7 +335,7 @@ ca_tracts <- ca_tracts %>%
     values_from = estimate
   )
 
-# 3. Now rename and calculate percentages
+#calculate percentages
 tract_data <- ca_tracts %>%
   st_drop_geometry() %>%
   rename(
@@ -362,7 +368,7 @@ tract_data <- ca_tracts %>%
 tract_data <- st_transform(tract_data, st_crs(streets_buffers))
 
 
-# 4. Perform the interpolation
+#interpolation
 streets_with_demographics <- cbind(
   sj_sample %>% 
     dplyr::select(osm_id, name),
@@ -390,25 +396,23 @@ mapview(tract_data["income_med"])
 
 This map provides a good exploration of the spatial distribution of median household income at the tract level in San Jose. Lower income residents appear to be clustered in the downtown core of the city, with median income increasing as one moves away from the downtown area. These interesting patterns may be useful in our model.
 
-*ChatGPT used to determine how to randomly sample my original sf object due to computational limitations.*
+*\[ChatGPT used to determine how to randomly sample my original sf object due to computational limitations.\]*
 
 ## Merging Datasets
+
+Next, I merge data into one dataset to use in our models. I join the street segment OSM and tree canopy data to the Census data by the column "osm_id."
 
 ```{r}
 sj_buffer_clean <- st_transform(sj_buffer_clean, 4326)
 
-# Ensure both are valid
 sj_buffer <- st_make_valid(sj_buffer)
 sj_blocks <- st_make_valid(sj_blocks)
 
-
-
 streets_blocks_intersection <- st_intersection(sj_buffer, sj_blocks)
 
-# Calculate length of each street segment within each block
+#length of each street segment within each block
 streets_blocks_intersection$segment_length <- st_length(streets_blocks_intersection)
 
-# Group by street segment ID and calculate population density
 streets_population <- streets_blocks_intersection %>%
   group_by(osm_id) %>%
   summarize(
@@ -419,8 +423,6 @@ streets_population <- streets_blocks_intersection %>%
 
 streets_with_population <- streets_clean %>%
   left_join(streets_population, by = "osm_id")
-
-
 
 osm_census <- left_join(
   sj_buffer_clean,
@@ -434,9 +436,11 @@ saveRDS(osm_census_clean, here("osm_census_clean.rds"))
 
 ```
 
-\[[Claude LLM](https://claude.ai/) used to help build code for accurately assigning population weighting to street segments\]
+*\[[Claude LLM](https://claude.ai/) used to help build code for accurately assigning population weighting to street segments\]*
 
 ### Multicollinearity
+
+In order to avoid collinearity among my predictors, I created two correlation matrices: the first with all of the predictors, and the second after removing predictors to ensure I've removed the correct variables to avoid collinearity.
 
 ```{r}
 library(ggcorrplot)
@@ -460,7 +464,7 @@ correlations <- corr_cross(df = numeric_cols %>%
 correlations
 ```
 
-The top few bars in this plot indicate that several predictors have a correlation coefficient above 0.7. In order to most efficiently avoid correlation, we remove `pct_hispanic` and `educ_college_perc`.
+The top few bars in this plot indicate that several predictors have a correlation coefficient above 0.7. In order to most efficiently avoid correlation, I remove `pct_hispanic` and `educ_college_perc`.
 
 ```{r}
 data_clean <- numeric_cols %>% select(-pct_hispanic, -educ_college_perc)
@@ -471,14 +475,15 @@ correlations2 <- corr_cross(df = data_clean %>%
 correlations2
 ```
 
-Removing these two predictors eliminated the main correlation issues.
+Removing these two predictors eliminated the main correlation issues, verified in the plot above.
 
 # Data Splitting and Cross-Validation
 
-Describe your process of splitting data into training, test, and/or validation sets. Describe the process of cross-validation. Remember to write for a general audience. Act as if your project will be read by people new to machine learning.
+To prep our data for future modeling, I split our initial dataset into several different groups. The first splits the data into 75% for training the model and 25% for testing the model, using a method called stratification that ensures that the subsets of data are representative of the original dataset. For this project, I stratify based on comfort level, making sure that the subset datasets have the same proportion of comfort level classifications as the original.
+
+After splitting into training and testing, I also created 5 folds or groups of data within our training dataset. I again stratify based on comfort level. These 5 folds will be used for cross-validation, a method that allows us to test our model without compromising our testing dataset. After fitting my data to the models, I will cross-validate it with these 5 folds of training data, where five separate times, the model is trained on 4 of the folds of data and then tested on the remaining fold. This then offers us an idea of how well the model performs.
 
 ```{r}
-
 data_clean2 <- readRDS(here("osm_census_clean.rds")) %>% select(-pct_hispanic, -educ_college_perc) 
 osm_census_split <- initial_split(data_clean2, prop = 0.75, strata = comfort_level)
 
@@ -487,14 +492,14 @@ osm_census_test <- testing(osm_census_split)
 
 osm_census_train$comfort_level <- as.factor(osm_census_train$comfort_level)
 
-folds <- vfold_cv(train_data, v = 5, strata = comfort_level)
+folds <- vfold_cv(osm_census_train, v = 5, strata = comfort_level) 
 ```
 
 # Model Fitting
 
-Describe the types of models you fit, their parameter values, and the results
+In this section, I fit multiple models to the training data: multinomial regression, k-nearest neighbors, elastic net, and random forest. Due to the extreme imbalance in the number of observations for each comfort level, with comfort level 1 having significantly more observations, I decided to upsample based on comfort level. I chose an over_ratio of 0.5 so that the minority comfort levels will have about half of the number of observations as comfort level 1.
 
-## Multinomial Regression Model
+## Recipe
 
 ```{r}
 library(themis)
@@ -502,9 +507,12 @@ library(themis)
 recipe <- recipe(comfort_level ~ ., data = osm_census_train) %>%
   step_dummy(all_nominal_predictors()) %>%
   step_normalize(all_numeric_predictors()) %>%
-  step_upsample(comfort_level)
+  step_upsample(comfort_level, over_ratio = 0.5)
+```
 
+## Multinomial Regression Model
 
+```{r}
 mn_m1 <- multinom_reg(penalty = 0) %>%
   set_engine("glmnet") %>%
   set_mode("classification")
@@ -542,7 +550,8 @@ pred_mn <- pred_mn %>%
 ## KNN Model
 
 ```{r}
-knn_m1 <- nearest_neighbor(neighbors = 5) %>%
+library(themis)
+knn_m1 <- nearest_neighbor(neighbors = tune()) %>%
   set_engine("kknn") %>%
   set_mode("classification")
 
@@ -550,11 +559,19 @@ knn_m1 <- nearest_neighbor(neighbors = 5) %>%
 knn_wflow <- workflow() %>% 
   add_model(knn_m1) %>% 
   add_recipe(recipe)
+knn_grid <- grid_regular(neighbors(range = c(5, 10)), levels = 10)
+
 
 knn_fit <- knn_wflow %>% 
-  fit(data = osm_census_train)
+  tune_grid(resamples = folds, grid = knn_grid)
+knn_fit %>% collect_metrics()
 
-pred_knn <- knn_fit %>% 
+knn_best <- select_best(knn_fit, metric = "accuracy")
+final_knn_wflow <- finalize_workflow(knn_wflow, knn_best)
+
+final_knn_fit <- fit(final_knn_wflow, data = osm_census_train)
+
+pred_knn <- final_knn_fit %>% 
   predict(new_data = osm_census_train) %>%
   bind_cols(osm_census_train %>% select(comfort_level))
 
@@ -565,7 +582,101 @@ metrics(pred_knn,
 
 yardstick::conf_mat(data = pred_knn, truth = comfort_level, estimate = .pred_class)
 
+# Prep and bake the recipe (upsampling will now apply)
+prepped_recipe <- prep(recipe, training = osm_census_train)
+baked_data <- bake(prepped_recipe, new_data = NULL)
+
+X <- select(baked_data, -comfort_level)
+y <- baked_data$comfort_level
+
+vip(
+  knn_model,
+  method = "permute",
+  train = X,
+  target = y, 
+  metric = "accuracy",
+  pred_wrapper = function(object, newdata) predict(object, newdata = newdata, type = "raw")
+)
+
 ```
+
+## Elastic Net Model
+
+```{r}
+en_m1 <- multinom_reg(
+  mixture = tune(),
+  penalty = tune()
+) %>%
+  set_mode("classification") %>%
+  set_engine("glmnet")
+
+
+en_wflow <- workflow() %>% 
+  add_model(en_m1) %>% 
+  add_recipe(recipe)
+en_grid <- grid_regular(penalty(),
+                     mixture(range = c(0, 1)), levels = 10)
+
+en_fit <- en_wflow %>% 
+  tune_grid(resamples = folds, grid = en_grid)
+en_fit %>% collect_metrics()
+
+en_best <- select_best(en_fit, metric = "accuracy")
+final_en_wflow <- finalize_workflow(en_wflow, en_best)
+
+final_en_fit <- fit(final_en_wflow, data = osm_census_train)
+
+pred_en <- final_en_fit %>% 
+  predict(new_data = osm_census_train) %>%
+  bind_cols(osm_census_train %>% select(comfort_level))
+
+# Calculate metrics
+metrics(pred_en, 
+        truth = comfort_level, 
+        estimate = .pred_class)
+
+yardstick::conf_mat(data = pred_en, truth = comfort_level, estimate = .pred_class)
+```
+
+## Random Forest Model
+
+```{r}
+library(ranger)
+rf_m1 <- rand_forest(mtry = tune(), 
+                           trees = tune(), 
+                           min_n = tune()) %>%
+  set_engine("ranger") %>% 
+  set_mode("classification")
+
+rf_m1_wf <- workflow() %>% 
+  add_model(rf_m1) %>% 
+  add_recipe(recipe)
+
+rf_grid <- grid_regular(mtry(range = c(1, 6)), 
+                        trees(range = c(200, 600)),
+                        min_n(range = c(10, 20)),
+                        levels = 5)
+```
+
+```{r, eval = FALSE}
+tune_rf <- tune_grid(
+  rf_m1_wf,
+  resamples = folds,
+  grid = rf_grid
+)
+```
+
+```{r, eval = FALSE}
+save(tune_rf, file = "tune_rf.rda")
+```
+
+```{r}
+load("tune_rf.rda")
+
+autoplot(tune_rf) +theme_minimal()
+```
+
+*\[Lab 7 used as a reference.\]*
 
 # Model Selection and Performance
 
