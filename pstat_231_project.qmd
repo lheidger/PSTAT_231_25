@@ -114,7 +114,7 @@ With these data in mind, our research questions are as follows:
 
 -   Do areas with higher urban canopy percentages also have more bike infrastructure?
 
--   Can urban canopy serve as a reliable predictor of bike infrastructure at the street-level?
+-   Can urban canopy serve as a reliable predictor of bike infrastructure at the street level?
 
 ## EDA
 
@@ -137,7 +137,7 @@ saveRDS(sf_boundary, here("data", "sf_boundary.rds"))
 
 ### Osm Data
 
-(ChatGPT used to learn how to use `osmdata`)
+*(ChatGPT used to learn how to use `osmdata`)*
 
 ```{r}
 san_jose <- getbb("San Jose, California")
@@ -221,7 +221,7 @@ This bar plot gives us a good sense of the overall frequency of each of the diff
 
 ### Read in clean tree and bike data
 
-After loading and cleaning the initial tree canopy data and OSM data, I saved both and uploaded them to ArcGIS Pro for further data wrangling. I first buffered each of the street segments by 25 meters to evaluate the street trees surrounding each street segment. Then, because the tree canopy data are raster data, I used the zonal statistics tool to analyze and assign the number of tree canopy pixels within each buffer and assign that value to the subsequent segment. I then calculated the area in $m^2$ of each segment and divided the pixel value by the area to calculate percent canopy coverage for each segment. I then uploaded the dataset back into R.
+After loading and cleaning the initial tree canopy data and OSM data, I saved both and uploaded them to ArcGIS Pro for further data wrangling. In ArcGIS, I first buffered each of the street segments by 25 meters to capture and evaluate the street trees surrounding each street segment. Then, because the tree canopy data are raster data, I used the zonal statistics tool to analyze and assign the number of tree canopy pixels within each buffer and assign that value to the subsequent segment. I then calculated the area in $m^2$ of each segment and divided the pixel value by the area to calculate percent canopy coverage for each segment. I then uploaded the dataset back into R.
 
 ```{r}
 sj_buffer <- st_read(here("PSTAT_231_25","data", "City_Limits", "main_Buffer4_Clip.shp"))
@@ -551,6 +551,7 @@ pred_mn <- pred_mn %>%
 
 ```{r}
 library(themis)
+library(vip)
 knn_m1 <- nearest_neighbor(neighbors = tune()) %>%
   set_engine("kknn") %>%
   set_mode("classification")
@@ -575,14 +576,12 @@ pred_knn <- final_knn_fit %>%
   predict(new_data = osm_census_train) %>%
   bind_cols(osm_census_train %>% select(comfort_level))
 
-# Calculate metrics
 metrics(pred_knn, 
         truth = comfort_level, 
         estimate = .pred_class)
 
 yardstick::conf_mat(data = pred_knn, truth = comfort_level, estimate = .pred_class)
 
-# Prep and bake the recipe (upsampling will now apply)
 prepped_recipe <- prep(recipe, training = osm_census_train)
 baked_data <- bake(prepped_recipe, new_data = NULL)
 
@@ -636,6 +635,15 @@ metrics(pred_en,
         estimate = .pred_class)
 
 yardstick::conf_mat(data = pred_en, truth = comfort_level, estimate = .pred_class)
+
+vip(
+  pred_en,
+  method = "permute",
+  train = X,
+  target = y, 
+  metric = "accuracy",
+  pred_wrapper = function(object, newdata) predict(object, newdata = newdata, type = "raw")
+)
 ```
 
 ## Random Forest Model
@@ -645,7 +653,7 @@ library(ranger)
 rf_m1 <- rand_forest(mtry = tune(), 
                            trees = tune(), 
                            min_n = tune()) %>%
-  set_engine("ranger") %>% 
+  set_engine("ranger", importance = "impurity") %>% 
   set_mode("classification")
 
 rf_m1_wf <- workflow() %>% 
@@ -653,7 +661,7 @@ rf_m1_wf <- workflow() %>%
   add_recipe(recipe)
 
 rf_grid <- grid_regular(mtry(range = c(1, 6)), 
-                        trees(range = c(200, 600)),
+                        trees(range = c(100, 400)),
                         min_n(range = c(10, 20)),
                         levels = 5)
 ```
@@ -664,6 +672,7 @@ tune_rf <- tune_grid(
   resamples = folds,
   grid = rf_grid
 )
+rf_best <- select_best(tune_rf, metric = "roc_auc")
 ```
 
 ```{r, eval = FALSE}
@@ -674,6 +683,19 @@ save(tune_rf, file = "tune_rf.rda")
 load("tune_rf.rda")
 
 autoplot(tune_rf) +theme_minimal()
+
+# Step 2: Finalize the workflow with those parameters
+rf_final_wflow <- finalize_workflow(rf_m1_wf, rf_best)
+
+# Step 3: Fit the final model on the full training set
+rf_final_fit <- fit(rf_final_wflow, data = osm_census_train)  # or your training data
+
+# Step 4: Extract the fitted model and plot variable importance
+library(vip)
+rf_final_fit %>%
+  extract_fit_parsnip() %>%
+  vip() +
+  theme_minimal()
 ```
 
 *\[Lab 7 used as a reference.\]*
@@ -684,10 +706,24 @@ A table and/or graph describing the performance of your best-fitting model on te
 
 ```{r}
 
+final_knn_test <- fit(final_knn_wflow, data = osm_census_test)
 
-accuracy(pred_mn, truth = comfort_level, estimate = predicted_class)
+pred_knn_test <- final_knn_test %>% 
+  predict(new_data = osm_census_test) %>%
+  bind_cols(osm_census_test %>% select(comfort_level))
+
+metrics(pred_knn_test, 
+        truth = comfort_level, 
+        estimate = .pred_class)
+
+yardstick::conf_mat(data = pred_knn_test, truth = comfort_level, estimate = .pred_class)
+
+
+accuracy(pred_knn_test, truth = comfort_level, estimate = .pred_class)
 ```
 
 # Conclusion
 
 Discusses the outcome(s) of models you fit. Which models performed well, which performed poorly? Were you surprised by model performance? Next steps? General conclusions?
+
+Of the four models evaluated, the k-nearest neighbors model performed the best, with an accuracy of \[ACCURACY\] on the testing data.
