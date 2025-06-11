@@ -35,7 +35,6 @@ library(yardstick)
 library(rsample)
 library(nnet)
 library(kknn)
-
 ```
 
 # Can Urban Tree Canopy Predict Bike Infrastructure?
@@ -122,7 +121,7 @@ My methods first involved exploring the data and the relationship of several var
 
 ### Tree Canopy Data
 
-```{r}
+```{r, eval = FALSE}
 sj_boundary <- st_read(here("PSTAT_231_25", "data", "san_jose", "urbanboundary", "San_Jose.shp"))
 sf_boundary <- st_read(here("PSTAT_231_25","data", "San_Francisco_and_Oakland", "urbanboundary", "San_Francisco_and_Oakland.shp"))
 
@@ -140,6 +139,9 @@ saveRDS(sf_boundary, here("data", "sf_boundary.rds"))
 *(ChatGPT used to learn how to use `osmdata`)*
 
 ```{r}
+sj_boundary <- readRDS(here("data", "sj_boundary.rds"))
+sf_boundary <- readRDS(here("data", "sf_boundary.rds"))
+
 san_jose <- getbb("San Jose, California")
 
 all_streets <- san_jose %>%
@@ -224,14 +226,14 @@ This bar plot gives us a good sense of the overall frequency of each of the diff
 After loading and cleaning the initial tree canopy data and OSM data, I saved both and uploaded them to ArcGIS Pro for further data wrangling. In ArcGIS, I first buffered each of the street segments by 25 meters to capture and evaluate the street trees surrounding each street segment. Then, because the tree canopy data are raster data, I used the zonal statistics tool to analyze and assign the number of tree canopy pixels within each buffer and assign that value to the subsequent segment. I then calculated the area in $m^2$ of each segment and divided the pixel value by the area to calculate percent canopy coverage for each segment. I then uploaded the dataset back into R.
 
 ```{r}
-sj_buffer <- st_read(here("PSTAT_231_25","data", "City_Limits", "main_Buffer4_Clip.shp"))
+sj_buffer <- st_read(here("data", "City_Limits", "main_Buffer4_Clip.shp"))
 
-sj_city_bound <- st_read(here("PSTAT_231_25","data", "City_Limits.shp"))
+sj_city_bound <- st_read(here("data", "City_Limits.shp"))
 # Map canopy density on each buffered street segment
 #mapview(sj_buffer["canopy_den"])
 
-saveRDS(sj_buffer, here("PSTAT_231_25","data", "sj_buffer.rds"))
-sj_buffer <- readRDS(here("PSTAT_231_25","data", "sj_buffer.rds"))
+saveRDS(sj_buffer, here("data", "sj_buffer.rds"))
+sj_buffer <- readRDS(here("data", "sj_buffer.rds"))
 
 ```
 
@@ -297,7 +299,7 @@ sj_blocks <- st_transform(sj_blocks, 4326)
 sj_blocks_clip <- st_intersection(sj_blocks, sj_city_bound)
 ```
 
-```{r}
+```{r, eval = FALSE}
 set.seed(123)
 
 sj_sample <- sj_buffer_clean %>%
@@ -390,9 +392,22 @@ streets_with_demographics <- cbind(
   ) %>%
     st_drop_geometry()
 )
+saveRDS(tract_data, here("data", "tract_data.rds"))
+saveRDS(streets_with_demographics, here("data", "streets_with_demographics.rds"))
 
-mapview(tract_data["income_med"])
 ```
+
+```{r}
+tract_data <- readRDS(here("data", "tract_data.rds"))
+streets_with_demographics <- readRDS(here("data", "streets_with_demographics.rds"))
+
+ggplot(tract_data) +
+  geom_sf(aes(fill = income_med), color = NA) +
+  scale_fill_viridis_c(option = "plasma") +  # nice gradient for numeric values
+  labs(title = "Median Income by Census Tract", fill = "Income") +
+  theme_minimal()
+```
+
 
 This map provides a good exploration of the spatial distribution of median household income at the tract level in San Jose. Lower income residents appear to be clustered in the downtown core of the city, with median income increasing as one moves away from the downtown area. These interesting patterns may be useful in our model.
 
@@ -431,6 +446,9 @@ osm_census <- left_join(
 )
 
 osm_census_clean <- osm_census %>% select(-bicycle, -cycleway, -bike_infra, -BUFF_DIST, -ORIG_FID, -ZONE_CODE, -COUNT, -AREA, -SUM, -area_m2, -geom_Lengt, -geom_Area, -name.y, -geometry, -osm_id, -name.x, -maxspeed, -highway) %>% drop_na() %>% st_drop_geometry() %>%  filter(comfort_level != 4)
+
+osm_census_clean_sf <- osm_census %>% select(-bicycle, -cycleway, -bike_infra, -BUFF_DIST, -ORIG_FID, -ZONE_CODE, -COUNT, -AREA, -SUM, -area_m2, -geom_Lengt, -geom_Area, -name.y, -geometry, -osm_id, -name.x, -maxspeed, -highway) %>% drop_na() %>%  filter(comfort_level != 4)
+
 
 saveRDS(osm_census_clean, here("osm_census_clean.rds"))
 
@@ -491,6 +509,7 @@ osm_census_train <- training(osm_census_split)
 osm_census_test <- testing(osm_census_split)
 
 osm_census_train$comfort_level <- as.factor(osm_census_train$comfort_level)
+osm_census_test$comfort_level <- as.factor(osm_census_test$comfort_level)
 
 folds <- vfold_cv(osm_census_train, v = 5, strata = comfort_level) 
 ```
@@ -511,6 +530,8 @@ recipe <- recipe(comfort_level ~ ., data = osm_census_train) %>%
 ```
 
 ## Multinomial Regression Model
+
+The following section creates and evaluates a multinomial regression model.
 
 ```{r}
 mn_m1 <- multinom_reg(penalty = 0) %>%
@@ -543,11 +564,17 @@ pred_mn <- pred_mn %>%
     predicted_class = factor(predicted_class, levels = levels(comfort_level))
   )
 
+accuracy(pred_mn, comfort_level, predicted_class)
+
 ```
 
-[*Tidymodels website*](https://www.tidymodels.org/start/resampling/) *used to understand resampling for validation. ChatGPT used to troubleshoot.*
+The multinomial regression model shows an accuracy of 75% on the training data.
+
+\[[*Tidymodels website*](https://www.tidymodels.org/start/resampling/) *used to understand resampling for validation. ChatGPT used to troubleshoot.\]*
 
 ## KNN Model
+
+The section below creates several k-nearest neighbor models, selecting the best value of k for accuracy.
 
 ```{r}
 library(themis)
@@ -599,7 +626,11 @@ vip(
 
 ```
 
+The best knn model has 8 neighbors and shows an accuracy of 91% on the training data.
+
 ## Elastic Net Model
+
+The following section creates and evaluates an elastic net model. Various hyperparameters are tuned and the best model is selected.
 
 ```{r}
 en_m1 <- multinom_reg(
@@ -646,7 +677,11 @@ vip(
 )
 ```
 
+The best elastic net model has a penalty of 1 and mixture of 0.111, showing an accuracy of 86% on the training data.
+
 ## Random Forest Model
+
+The following section details the creation of a random forest model. The model is tuned using various hyperparameters, and the best performing model is selected.
 
 ```{r}
 library(ranger)
@@ -696,19 +731,25 @@ rf_final_fit %>%
   extract_fit_parsnip() %>%
   vip() +
   theme_minimal()
+
+rf_preds <- predict(rf_final_fit, new_data = osm_census_train) %>%  
+  bind_cols(osm_census_train %>% select(comfort_level))             
+
+accuracy(rf_preds, truth = comfort_level, .pred_class)
+
+augment(rf_final_fit, new_data = osm_census_train) %>% 
+  conf_mat(truth = comfort_level, estimate = .pred_class) %>% 
+  autoplot(type = "heatmap")
+
 ```
 
 *\[Lab 7 used as a reference.\]*
 
 # Model Selection and Performance
 
-A table and/or graph describing the performance of your best-fitting model on testing data. Describe your best-fitting model however you choose, and the quality of its predictions, etc
-
 ```{r}
 
-final_knn_test <- fit(final_knn_wflow, data = osm_census_test)
-
-pred_knn_test <- final_knn_test %>% 
+pred_knn_test <- final_knn_fit %>% 
   predict(new_data = osm_census_test) %>%
   bind_cols(osm_census_test %>% select(comfort_level))
 
@@ -722,8 +763,47 @@ yardstick::conf_mat(data = pred_knn_test, truth = comfort_level, estimate = .pre
 accuracy(pred_knn_test, truth = comfort_level, estimate = .pred_class)
 ```
 
+```{r}
+accuracy(rf_pred_test, truth = comfort_level, .pred_class)
+
+augment(rf_final_fit, new_data = osm_census_test) %>% 
+  conf_mat(truth = comfort_level, estimate = .pred_class) %>% 
+  autoplot(type = "heatmap")
+```
+
+The best-performing model, chosen based on the accuracy both on the training set and then comparing model performance on the testing set, is the random forest model with an mtry of 1, 400 trees, and a min_n of 12. While this model has a high accuracy of 85% on the training data, this appears to be largely due to the large percent of the dataset made up by comfort level 1. The model even incorrectly classifies comfort level 3 as level 1 more often than any other level. This dataset is proving to be difficult for these models due to the large oversampling of comfort level 1.
+
 # Conclusion
 
-Discusses the outcome(s) of models you fit. Which models performed well, which performed poorly? Were you surprised by model performance? Next steps? General conclusions?
+Of the four models evaluated, the random forest model performed the best, with an accuracy of 85% on the testing data. This model did an overall good job at predicting, but still tends to over-predict comfort level 1. The multinomial model had the lowest performance, with an accuracy of 75% on the training data. Overall, model performance was logical. The random forest has the flexibility to fit the data, overfitting a bit, yet still performing with higher accuracy. The multinomial regression model was not flexible enough for the data.
 
-Of the four models evaluated, the k-nearest neighbors model performed the best, with an accuracy of \[ACCURACY\] on the testing data.
+The random forest model ranked the predictor importance as follows: bicycle percent, percent poverty, canopy density, median household income, percent veterans, percent black, and percent high school educated. While this doesn't show that canopy density is the *most* important predictor, it still ranks high and proves to be useful. Ultimately, this project "reverse-engineers" the connection between sociodemographics and urban planning, nodding towards the claim that underserved communities are often less served by urban planning, where they often lack tree canopy *and* bicycle infrastructure. I hope to continue to explore this connection and evaluate whether tree canopy density is useful in other models such as predicting bicycle ridership on individual street segments.
+
+Below I map the final correct and incorrect predictions from the random forest model. The error appears to be spatially random, but it would require a moran's I test to confirm.
+
+```{r}
+test_indices <- as.integer(rownames(osm_census_test))
+osm_census_test_sf <- osm_census_clean_sf[test_indices, ]
+
+rf_pred_test <- predict(rf_final_fit, new_data = osm_census_test, type = "class") %>%
+  bind_cols(osm_census_test %>% select(comfort_level))
+
+rf_pred_test <- rf_pred_test %>%
+  mutate(correct = if_else(.pred_class == comfort_level, "yes", "no"))
+
+
+osm_pred_sf <- osm_census_test_sf %>%
+  mutate(
+    predicted = rf_pred_test$.pred_class,
+    actual = rf_pred_test$comfort_level,
+    correct = rf_pred_test$correct
+  )
+
+ggplot(osm_pred_sf) +
+  geom_sf(aes(fill = correct), color = NA) +
+  scale_fill_manual(values = c("yes" = "forestgreen", "no" = "red")) +
+  labs(title = "Prediction Accuracy by Location", fill = "Correct?") +
+  theme_minimal()
+```
+
+*\[ChatGPT used to troubleshoot reattaching spatial geometries.\]*
